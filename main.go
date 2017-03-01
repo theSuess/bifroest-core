@@ -1,25 +1,30 @@
 package main
 
 import (
+	log "github.com/Sirupsen/logrus"
+	"gopkg.in/redis.v5"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 )
 
-type Handler struct{}
-
-var subdomains = map[string]string{
-	"foo": "http://example.com",
-	"bar": "http://stackoverflow.com",
+type handler struct {
+	client *redis.Client
 }
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Info(r.Host + r.RequestURI)
+	domain := strings.Split(r.Host, ".")[0]
+	host, err := h.client.Get("bfr:domains:" + domain).Result()
+	if err != nil {
+		log.Warnf("Invalid Subdomain requested: %s", domain)
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte("Subdomain not found"))
+		return
+	}
 
-	base := subdomains[strings.Split(r.Host, ".")[0]]
-
-	uri := base + r.RequestURI
+	uri := host + r.RequestURI
 
 	rr, err := http.NewRequest(r.Method, uri, r.Body)
 	fatal(err)
@@ -58,12 +63,19 @@ func copyHeader(source http.Header, dest *http.Header) {
 }
 
 func main() {
-	h := Handler{}
+	client := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	h := handler{client: client}
 	srv := &http.Server{
 		Addr:         ":8080",
 		Handler:      &h,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+	log.Println("Server started")
 	log.Fatal(srv.ListenAndServe())
 }
