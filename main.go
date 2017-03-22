@@ -6,11 +6,13 @@ import (
 	"gopkg.in/redis.v5"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"strings"
 )
 
 type handler struct {
-	store URLStore
+	store     URLStore
+	errorPage string
 }
 
 type configuration struct {
@@ -40,9 +42,13 @@ func (h *handler) proxy(r *http.Request) {
 		"remoteAddr": r.RemoteAddr,
 	}).Infof("%s %s", r.Method, r.RequestURI)
 	host, _ := h.store.Get("bfr:domains:" + domain)
-	r.Host = host
-	r.URL.Host = r.Host
-	r.URL.Scheme = "https" //TODO: check for correct scheme
+	if host == "" {
+		host = h.errorPage
+	}
+	u, _ := url.Parse(host)
+	r.Host = u.Host
+	r.URL.Host = u.Host
+	r.URL.Scheme = u.Scheme
 
 }
 
@@ -61,7 +67,10 @@ func main() {
 		}),
 	}
 
-	h := handler{store: client}
+	h := handler{
+		store:     client,
+		errorPage: "https://example.com",
+	}
 	prx := &httputil.ReverseProxy{
 		Director: h.proxy,
 	}
