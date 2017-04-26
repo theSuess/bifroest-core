@@ -8,6 +8,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"os"
+	"os/signal"
 )
 
 type handler struct {
@@ -17,6 +19,9 @@ type handler struct {
 
 type configuration struct {
 	BindAddress string
+	BindAddressTLS string
+	Certificate string
+	Key string
 }
 
 // URLStore Abstracts the data storage for easier testing
@@ -74,6 +79,17 @@ func main() {
 	prx := &httputil.ReverseProxy{
 		Director: h.proxy,
 	}
+
 	log.Printf("Server started on `%s`", config.BindAddress)
-	log.Fatal(http.ListenAndServe(config.BindAddress, prx))
+	go func () {
+		log.Fatal(http.ListenAndServe(config.BindAddress, prx))
+	}()
+	log.Printf("TLS Server started on `%s`", config.BindAddressTLS)
+	go func () {
+		log.Fatal(http.ListenAndServeTLS(config.BindAddressTLS, config.Certificate, config.Key, prx))
+	}()
+	var sc chan os.Signal
+	sc = make(chan os.Signal, 1)
+	signal.Notify(sc,os.Interrupt)
+	<- sc
 }
